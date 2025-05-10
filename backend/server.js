@@ -7,6 +7,7 @@ import userRouter from "./routes/userRoute.js"
 import doctorRouter from "./routes/doctorRoute.js"
 import mongoose from 'mongoose';
 import adminRouter from "./routes/adminRoute.js"
+import hospitalRouter from "./routes/hospitalRoutes.js"
 
 // Debug logging for environment variables
 console.log("Environment Variables Check:");
@@ -51,6 +52,7 @@ app.use((req, res, next) => {
 app.use("/api/user", userRouter)
 app.use("/api/admin", adminRouter)
 app.use("/api/doctor", doctorRouter)
+app.use("/api/hospital", hospitalRouter)
 
 app.get("/", (req, res) => {
   res.send("API Working")

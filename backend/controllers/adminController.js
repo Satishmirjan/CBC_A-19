@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import validator from "validator";
 import { v2 as cloudinary } from "cloudinary";
 import userModel from "../models/userModel.js";
+import Hospital from "../models/hospitalModel.js";
 
 const loginAdmin = async (req, res) => {
     try {
@@ -56,10 +57,10 @@ const appointmentCancel = async (req, res) => {
 
 const addDoctor = async (req, res) => {
     try {
-        const { name, email, password, speciality, degree, experience, about, fees, address } = req.body
+        const { name, email, password, speciality, degree, experience, about, fees, address, hospitalId } = req.body
         const imageFile = req.file
 
-        if (!name || !email || !password || !speciality || !degree || !experience || !about || !fees || !address) {
+        if (!name || !email || !password || !speciality || !degree || !experience || !about || !fees || !address || !hospitalId) {
             return res.json({ success: false, message: "Missing Details" })
         }
 
@@ -84,6 +85,7 @@ const addDoctor = async (req, res) => {
             about,
             fees,
             address: JSON.parse(address),
+            hospital: hospitalId,
             date: Date.now(),
             image: null // Set default image as null
         }
@@ -110,6 +112,12 @@ const addDoctor = async (req, res) => {
 
         const newDoctor = new doctorModel(doctorData);
         await newDoctor.save();
+
+        // Add doctor to hospital's doctors array
+        await Hospital.findByIdAndUpdate(hospitalId, {
+            $push: { doctors: newDoctor._id }
+        });
+
         res.json({ success: true, message: 'Doctor Added' });
 
     } catch (error) {

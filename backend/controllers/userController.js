@@ -5,6 +5,7 @@ import userModel from "../models/userModel.js";
 import doctorModel from "../models/doctorModel.js";
 import appointmentModel from "../models/appointmentModel.js";
 import { v2 as cloudinary } from 'cloudinary'
+import Hospital from "../models/hospitalModel.js";
 
 
 
@@ -115,14 +116,22 @@ const updateProfile = async (req, res) => {
 }
 
 const bookAppointment = async (req, res) => {
-
     try {
-
-        const { userId, docId, slotDate, slotTime } = req.body
+        const { userId, docId, slotDate, slotTime, requiresBed } = req.body
         const docData = await doctorModel.findById(docId).select("-password")
 
         if (!docData.available) {
             return res.json({ success: false, message: 'Doctor Not Available' })
+        }
+
+        // Check bed availability if bed is required
+        if (requiresBed) {
+            const availableBeds = parseInt(process.env.AVAILABLE_BEDS || '50');
+            if (availableBeds <= 0) {
+                return res.json({ success: false, message: 'No beds available' })
+            }
+            // Decrease available beds
+            process.env.AVAILABLE_BEDS = (availableBeds - 1).toString();
         }
 
         let slots_booked = docData.slots_booked
@@ -151,7 +160,8 @@ const bookAppointment = async (req, res) => {
             amount: docData.fees,
             slotTime,
             slotDate,
-            date: Date.now()
+            date: Date.now(),
+            requiresBed: requiresBed || false
         }
 
         const newAppointment = new appointmentModel(appointmentData)
@@ -159,39 +169,51 @@ const bookAppointment = async (req, res) => {
 
         await doctorModel.findByIdAndUpdate(docId, { slots_booked })
 
-        res.json({ success: true, message: 'Appointment Booked' })
+        res.json({ 
+            success: true, 
+            message: 'Appointment Booked',
+            bedBooked: requiresBed,
+            availableBeds: process.env.AVAILABLE_BEDS
+        })
 
     } catch (error) {
         console.log(error)
         res.json({ success: false, message: error.message })
     }
-
 }
 
 const cancelAppointment = async (req, res) => {
     try {
-
-        const { userId, appointmentId } = req.body
-        const appointmentData = await appointmentModel.findById(appointmentId)
-
-        // verify appointment user 
-        if (appointmentData.userId !== userId) {
-            return res.json({ success: false, message: 'Unauthorized action' })
+        const { appointmentId } = req.body
+        const appointment = await appointmentModel.findById(appointmentId)
+        
+        if (!appointment) {
+            return res.json({ success: false, message: 'Appointment not found' })
         }
 
-        await appointmentModel.findByIdAndUpdate(appointmentId, { cancelled: true })
+        // If the appointment required a bed, release it back
+        if (appointment.requiresBed) {
+            const availableBeds = parseInt(process.env.AVAILABLE_BEDS || '50');
+            process.env.AVAILABLE_BEDS = (availableBeds + 1).toString();
+        }
 
-        const { docId, slotDate, slotTime } = appointmentData
+        // Remove the slot from doctor's booked slots
+        const doctor = await doctorModel.findById(appointment.docId)
+        if (doctor && doctor.slots_booked[appointment.slotDate]) {
+            doctor.slots_booked[appointment.slotDate] = doctor.slots_booked[appointment.slotDate]
+                .filter(slot => slot !== appointment.slotTime)
+        }
+        await doctor.save()
 
-        const doctorData = await doctorModel.findById(docId)
+        // Delete the appointment
+        await appointmentModel.findByIdAndDelete(appointmentId)
 
-        let slots_booked = doctorData.slots_booked
-
-        slots_booked[slotDate] = slots_booked[slotDate].filter(e => e !== slotTime)
-
-        await doctorModel.findByIdAndUpdate(docId, { slots_booked })
-
-        res.json({ success: true, message: 'Appointment Cancelled' })
+        res.json({ 
+            success: true, 
+            message: 'Appointment Cancelled',
+            bedReleased: appointment.requiresBed,
+            availableBeds: process.env.AVAILABLE_BEDS
+        })
 
     } catch (error) {
         console.log(error)
@@ -213,6 +235,26 @@ const listAppointment = async (req, res) => {
     }
 }
 
+const getHospitalStatus = async (req, res) => {
+    try {
+        const doctors = await doctorModel.find({});
+        const hasAvailableDoctors = doctors.some(doc => doc.available);
+        const availableBeds = parseInt(process.env.AVAILABLE_BEDS || '50');
+
+        res.json({
+            success: true,
+            data: {
+                name: "Cure Care Hospital",
+                acceptsEmergencyCases: hasAvailableDoctors,
+                availableBeds: availableBeds,
+                totalBeds: 50
+            }
+        });
+    } catch (error) {
+        console.log(error);
+        res.json({ success: false, message: error.message });
+    }
+};
 
 export {
     loginUser,
@@ -222,5 +264,5 @@ export {
     bookAppointment,
     listAppointment,
     cancelAppointment,
-   
+    getHospitalStatus
 }
