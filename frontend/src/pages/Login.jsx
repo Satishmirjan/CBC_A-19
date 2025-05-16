@@ -46,7 +46,7 @@ const Login = () => {
 
   useEffect(() => {
     if (token) {
-      navigate('/')
+      navigate('/') // This is the original home path
     }
   }, [token])
 
